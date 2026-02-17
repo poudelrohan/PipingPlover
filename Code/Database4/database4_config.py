@@ -45,7 +45,7 @@ config = {
     # ── Columns to Keep ────────────────────────────────────────────────────────
     # Biologist-approved columns (from row 0 annotations: yes/Yes)
     # Dropped: ProjectID, StateProvince, ObserverEmail, dbo_Flocks.SpeciesID
-    # Pending decision: ResightingMasterID, ResightingID, LocationID
+    # Dropped: ResightingMasterID, ResightingID, LocationID (biologist annotated "no")
     "columns_to_keep": [
         "ResightDate",
         "LocationName",
@@ -74,8 +74,11 @@ config = {
     },
 
     # ── Duplicate Criteria ─────────────────────────────────────────────────────
-    # TODO: Define what makes two rows duplicates
-    # Pending decision from user
-    "duplicate_criteria": [],
+    # Two rows are duplicates if all four of these match:
+    #   Latitude + Longitude → same exact spot
+    #   ResightDate          → same day
+    #   FlagCode             → same individual bird (band combo is the bird's unique ID)
+    # Note: if FlagCode is null on both rows, they are still treated as duplicates
+    "duplicate_criteria": ["Latitude", "Longitude", "ResightDate", "FlagCode"],
 
 }
