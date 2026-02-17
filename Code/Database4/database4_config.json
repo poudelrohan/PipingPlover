@@ -18,11 +18,32 @@
     "lon_max": -80.031362
   },
 
-  "required_fields": [],
+  "required_fields": ["Latitude", "Longitude"],
 
-  "columns_to_keep": [],
+  "columns_to_keep": [
+    "ResightDate",
+    "LocationName",
+    "Latitude",
+    "Longitude",
+    "ObserverFirst",
+    "ObserverLast",
+    "dbo_ResightingMasters.Comments",
+    "SpeciesID",
+    "FlagID",
+    "FlagCode",
+    "UpperLeft",
+    "LowerLeft",
+    "UpperRight",
+    "LowerRight",
+    "dbo_Resightings.Comments",
+    "FlockSize",
+    "FlockActivityID"
+  ],
 
-  "column_rename": {},
+  "column_rename": {
+    "dbo_ResightingMasters.Comments": "MasterComments",
+    "dbo_Resightings.Comments": "ResightingComments"
+  },
 
-  "duplicate_criteria": []
+  "duplicate_criteria": ["Latitude", "Longitude", "ResightDate", "FlagCode"]
 }
