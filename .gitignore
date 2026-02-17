@@ -1,0 +1,33 @@
+# ── Data files (never commit raw or processed data) ──────────────────────────
+*.xlsx
+*.xls
+*.csv
+*.zip
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+*.env
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editors ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
