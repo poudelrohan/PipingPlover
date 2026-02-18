@@ -42,18 +42,23 @@ config = {
         "ResightDate",
     ],
 
-    # ── Columns to Keep ────────────────────────────────────────────────────────
+    # ── Source Database Label ───────────────────────────────────────────────────
+    # Added as a column to every row so data origin is clear after merging databases
+    "source_database": "Banded Birds",
+
+    # ── Columns to Keep & Final Column Order ───────────────────────────────────
     # Biologist-approved columns (from row 0 annotations: yes/Yes)
     # Dropped: ProjectID, StateProvince, ObserverEmail, dbo_Flocks.SpeciesID
     # Dropped: ResightingMasterID, ResightingID, LocationID (biologist annotated "no")
+    # Order: Sighting Event → Bird Identity → Observer → Notes → Tracking
     "columns_to_keep": [
+        # ── Sighting Event ──────────────────────
         "ResightDate",
         "LocationName",
         "Latitude",
         "Longitude",
-        "ObserverFirst",
-        "ObserverLast",
-        "dbo_ResightingMasters.Comments",
+
+        # ── Bird Identity ───────────────────────
         "SpeciesID",
         "FlagID",
         "FlagCode",
@@ -61,9 +66,22 @@ config = {
         "LowerLeft",
         "UpperRight",
         "LowerRight",
-        "dbo_Resightings.Comments",
+
+        # ── Observer ────────────────────────────
+        "ObserverFirst",
+        "ObserverLast",
+
+        # ── Notes ───────────────────────────────
         "FlockSize",
         "FlockActivityID",
+        "dbo_ResightingMasters.Comments",
+        "dbo_Resightings.Comments",
+
+        # ── Tracking (always last) ───────────────
+        "unique_id",
+        "source_database",
+        "source_file",
+        "source_sheet",
     ],
 
     # ── Column Renames ─────────────────────────────────────────────────────────

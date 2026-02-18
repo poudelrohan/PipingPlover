@@ -3,9 +3,10 @@ Step 1: Add Unique IDs
 ──────────────────────
 Reads all input Excel files defined in the config, combines them into
 one DataFrame, and adds:
-  - unique_id    : sequential integer (1, 2, 3 ...)
-  - source_file  : name of the Excel file the row came from
-  - source_sheet : name of the sheet the row came from
+  - unique_id       : sequential integer (1, 2, 3 ...)
+  - source_database : human-readable database label (from config)
+  - source_file     : name of the Excel file the row came from
+  - source_sheet    : name of the sheet the row came from
 
 Output: database4_with_ids.xlsx
 """
@@ -42,8 +43,9 @@ for filename in config["input"]["files"]:
         print(f"  Reading '{filename}' → sheet '{sheet}' ...")
         df = pd.read_excel(filepath, sheet_name=sheet, header=header_row)
 
-        df["source_file"]  = filename
-        df["source_sheet"] = sheet
+        df["source_database"] = config["source_database"]
+        df["source_file"]     = filename
+        df["source_sheet"]    = sheet
 
         all_frames.append(df)
         print(f"    {len(df)} rows loaded")

@@ -1,11 +1,11 @@
 """
-Step 4: Column Selection & Rename
-───────────────────────────────────
-Keeps only biologist-approved columns defined in config["columns_to_keep"].
-Also renames columns per config["column_rename"].
-
-Pipeline/tracking columns always kept regardless of config:
-  - unique_id, source_file, source_sheet, _removal_reason
+Step 4: Column Selection, Rename & Ordering
+────────────────────────────────────────────
+- Keeps only biologist-approved columns defined in config["columns_to_keep"]
+- Enforces the column order defined in config["columns_to_keep"]
+- Renames columns per config["column_rename"]
+- Strips time component from date columns (date only, Excel date format)
+- _removal_reason kept internally for Step 5/6 but not shown in final output
 
 Logs which columns were dropped.
 
@@ -35,12 +35,15 @@ if not os.path.exists(input_path):
 
 df = pd.read_excel(input_path)
 print(f"  Loaded {len(df)} rows from Step 3")
-print(f"  Columns before selection: {list(df.columns)}")
 
-# ── Always keep these pipeline columns ────────────────────────────────────────
-pipeline_cols = ["unique_id", "source_file", "source_sheet", "_removal_reason"]
+# ── Strip time from all datetime columns ───────────────────────────────────────
+# Converts datetime64 → plain date so Excel shows MM/DD/YYYY not MM/DD/YYYY 00:00:00
+for col in df.columns:
+    if pd.api.types.is_datetime64_any_dtype(df[col]):
+        df[col] = pd.to_datetime(df[col]).dt.date
+        print(f"  Stripped time from '{col}' → date only")
 
-# ── Build final column list ────────────────────────────────────────────────────
+# ── Build final column list (order from config) ────────────────────────────────
 keep = config["columns_to_keep"]
 
 # Warn if any config column doesn't exist in the data
@@ -48,26 +51,24 @@ missing_cols = [c for c in keep if c not in df.columns]
 if missing_cols:
     print(f"\n  [WARNING] These columns from config not found in data: {missing_cols}")
 
-# Only keep columns that actually exist
-keep_existing = [c for c in keep if c in df.columns]
+# Follow config order exactly, only include columns that exist
+keep_ordered = [c for c in keep if c in df.columns]
 
-# Add pipeline cols (only if they exist)
-for col in pipeline_cols:
-    if col in df.columns and col not in keep_existing:
-        keep_existing.append(col)
+# Always append _removal_reason at the very end for internal pipeline use
+if "_removal_reason" in df.columns and "_removal_reason" not in keep_ordered:
+    keep_ordered.append("_removal_reason")
 
 # Log what's being dropped
-all_cols    = list(df.columns)
-dropped     = [c for c in all_cols if c not in keep_existing]
+all_cols = list(df.columns)
+dropped  = [c for c in all_cols if c not in keep_ordered]
 print(f"\n  Columns dropped ({len(dropped)}): {dropped}")
-print(f"  Columns kept   ({len(keep_existing)}): {keep_existing}")
+print(f"  Columns kept   ({len(keep_ordered)}): {keep_ordered}")
 
-# ── Select columns ─────────────────────────────────────────────────────────────
-df = df[keep_existing]
+# ── Select & reorder columns ───────────────────────────────────────────────────
+df = df[keep_ordered]
 
 # ── Rename columns ─────────────────────────────────────────────────────────────
 renames = config.get("column_rename", {})
-# Only rename columns that exist
 valid_renames = {old: new for old, new in renames.items() if old in df.columns}
 if valid_renames:
     df = df.rename(columns=valid_renames)
@@ -77,6 +78,6 @@ if valid_renames:
 df.to_excel(output_path, index=False)
 
 print(f"\n[DONE] Step 4 complete")
-print(f"  Rows : {len(df)}")
-print(f"  Final columns: {list(df.columns)}")
-print(f"  Output : {output_path}")
+print(f"  Rows          : {len(df)}")
+print(f"  Final columns : {list(df.columns)}")
+print(f"  Output        : {output_path}")
