@@ -14,18 +14,27 @@ Output: database4_with_ids.xlsx
 import pandas as pd
 import os
 import sys
+import glob
 
 # ── Load config ────────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
 from database4_config import config
 
 # ── Resolve paths ──────────────────────────────────────────────────────────────
-script_dir   = os.path.dirname(os.path.abspath(__file__))
-input_folder = os.path.normpath(os.path.join(script_dir, config["input"]["folder"]))
+script_dir    = os.path.dirname(os.path.abspath(__file__))
+input_folder  = os.path.normpath(os.path.join(script_dir, config["input"]["folder"]))
 output_folder = os.path.normpath(os.path.join(script_dir, config["output"]["folder"]))
-header_row   = config["input"]["header_row"]
+header_row    = config["input"]["header_row"]
 
 os.makedirs(output_folder, exist_ok=True)
+
+# ── Clear output folder before each run ───────────────────────────────────────
+# Prevents stale files from previous runs mixing with current results
+old_files = glob.glob(os.path.join(output_folder, "*.xlsx"))
+if old_files:
+    for f in old_files:
+        os.remove(f)
+    print(f"  Cleared {len(old_files)} old output file(s) from previous run")
 
 # ── Read all input files ───────────────────────────────────────────────────────
 all_frames = []
