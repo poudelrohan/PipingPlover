@@ -50,8 +50,11 @@ config = {
     # Biologist-approved columns (from row 0 annotations: yes/Yes)
     # Dropped: ProjectID, StateProvince, ObserverEmail, dbo_Flocks.SpeciesID
     # Dropped: ResightingMasterID, ResightingID, LocationID (biologist annotated "no")
-    # Order: Sighting Event → Bird Identity → Observer → Notes → Tracking
+    # Order: ID → Sighting Event → Bird Identity → Observer → Notes → Tracking
     "columns_to_keep": [
+        # ── Row Identifier (always first) ───────
+        "unique_id",
+
         # ── Sighting Event ──────────────────────
         "ResightDate",
         "LocationName",
@@ -78,7 +81,6 @@ config = {
         "dbo_Resightings.Comments",
 
         # ── Tracking (always last) ───────────────
-        "unique_id",
         "source_database",
         "source_file",
         "source_sheet",
