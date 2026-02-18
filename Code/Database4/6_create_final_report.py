@@ -58,14 +58,23 @@ print(f"  Removed rows : {len(removed_df)}")
 print(f"  Total input  : {len(original)}")
 
 # ── Sheet 2: Removed_Rows ──────────────────────────────────────────────────────
-# Reorder so key info is first
+# Use the same clean column order as Clean_Data, with tracking + reason up front
 removed_sheet = removed_df.copy()
-priority_cols = ["unique_id", "source_file", "source_sheet", "_removal_reason"]
-other_cols    = [c for c in removed_sheet.columns if c not in priority_cols]
-removed_sheet = removed_sheet[
-    [c for c in priority_cols if c in removed_sheet.columns] + other_cols
-]
 removed_sheet = removed_sheet.rename(columns={"_removal_reason": "removal_reason"})
+
+# Front: tracking + reason
+front_cols = ["unique_id", "removal_reason", "source_database", "source_file", "source_sheet"]
+
+# Middle: same biologist columns as Clean_Data (only those that exist in removed)
+clean_cols = [c for c in clean_df.columns
+              if c not in front_cols and c in removed_sheet.columns]
+
+# Assemble final column order
+final_removed_cols = (
+    [c for c in front_cols if c in removed_sheet.columns] +
+    clean_cols
+)
+removed_sheet = removed_sheet[final_removed_cols]
 
 # ── Sheet 3: Summary_Report ────────────────────────────────────────────────────
 total_input   = len(original)
@@ -88,41 +97,37 @@ for _, row in clean_df.iterrows():
             "missing_fields": ", ".join(missing)
         })
 
-# Build summary rows
+# Build summary rows — section headers use a marker so we can bold them in formatting
+SECTION = "§"  # marker prefix for section header rows
+
 summary_rows = [
-    ("Run date",                    datetime.now().strftime("%Y-%m-%d %H:%M")),
-    ("Database",                    config["database_name"]),
-    ("",                            ""),
-    ("── Input ──",                 ""),
-    ("Total rows input",            total_input),
-    ("Source files",                ", ".join(config["input"]["files"])),
-    ("",                            ""),
-    ("── Output ──",                ""),
-    ("Total rows in Clean_Data",    total_clean),
-    ("Total rows removed",          total_removed),
-    ("Pct rows kept",               f"{round(total_clean / total_input * 100, 2)}%"),
-    ("",                            ""),
-    ("── Removal Breakdown ──",     ""),
+    ("Run date",                                            datetime.now().strftime("%Y-%m-%d %H:%M")),
+    ("Database",                                            config["database_name"]),
+    ("Source database label",                               config["source_database"]),
+    (f"{SECTION}Input",                                     ""),
+    ("Total rows input",                                    total_input),
+    ("Source files",                                        ", ".join(config["input"]["files"])),
+    (f"{SECTION}Output",                                    ""),
+    ("Total rows in Clean_Data",                            total_clean),
+    ("Total rows removed",                                  total_removed),
+    ("Percentage of rows kept",                             f"{round(total_clean / total_input * 100, 2)}%"),
+    (f"{SECTION}Removal Breakdown",                         ""),
 ]
 
 for _, r in reason_counts.iterrows():
     summary_rows.append((f"  {r['removal_reason']}", f"{r['count']} rows ({r['percentage']})"))
 
-summary_rows += [
-    ("",                            ""),
-    ("── Location Warnings ──",     ""),
-    ("Rows with partial location data (kept but flagged)", len(partial_warnings)),
-]
+summary_rows.append((f"{SECTION}Location Warnings", ""))
+summary_rows.append(("Rows with partial location data (kept but flagged)", len(partial_warnings)))
 
 if partial_warnings:
     for w in partial_warnings:
         summary_rows.append((f"  unique_id {w['unique_id']}", f"Missing: {w['missing_fields']}"))
+else:
+    summary_rows.append(("  None", ""))
 
-summary_rows += [
-    ("",                            ""),
-    ("── Duplicate Criteria ──",    ""),
-    ("Columns used",                ", ".join(config["duplicate_criteria"])),
-]
+summary_rows.append((f"{SECTION}Duplicate Criteria", ""))
+summary_rows.append(("Columns used to detect duplicates", ", ".join(config["duplicate_criteria"])))
 
 summary_df = pd.DataFrame(summary_rows, columns=["Metric", "Value"])
 
@@ -132,13 +137,14 @@ with pd.ExcelWriter(final_path, engine="openpyxl") as writer:
     removed_sheet.to_excel(writer, sheet_name="Removed_Rows", index=False)
     summary_df.to_excel(writer,  sheet_name="Summary_Report", index=False)
 
-    # ── Basic formatting ───────────────────────────────────────────────────────
-    from openpyxl.styles import Font, PatternFill, Alignment
+    # ── Formatting ─────────────────────────────────────────────────────────────
+    from openpyxl.styles import Font, PatternFill, Alignment, numbers
     from openpyxl.utils import get_column_letter
 
     wb = writer.book
 
     header_font  = Font(bold=True, color="FFFFFF")
+    section_font = Font(bold=True, color="1565C0")
     header_fills = {
         "Clean_Data":     PatternFill("solid", fgColor="2E7D32"),  # dark green
         "Removed_Rows":   PatternFill("solid", fgColor="C62828"),  # dark red
@@ -154,6 +160,25 @@ with pd.ExcelWriter(final_path, engine="openpyxl") as writer:
             cell.font      = header_font
             cell.fill      = fill
             cell.alignment = Alignment(horizontal="center")
+
+        # Apply Excel date format to date columns
+        if sheet_name in ["Clean_Data", "Removed_Rows"]:
+            for col in ws.iter_cols(min_row=1, max_row=1):
+                if col[0].value == "ResightDate":
+                    col_letter = get_column_letter(col[0].column)
+                    for row in ws[col_letter]:
+                        if row.row > 1:
+                            row.number_format = "MM/DD/YYYY"
+
+        # Summary_Report: bold section header rows (marked with §)
+        if sheet_name == "Summary_Report":
+            for row in ws.iter_rows(min_row=2):
+                cell = row[0]
+                if cell.value and str(cell.value).startswith(SECTION):
+                    cell.value = str(cell.value).replace(SECTION, "")
+                    for c in row:
+                        c.font = section_font
+                        c.fill = PatternFill("solid", fgColor="E3F2FD")  # light blue bg
 
         # Auto-fit column widths
         for col in ws.columns:

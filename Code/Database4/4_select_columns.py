@@ -37,10 +37,11 @@ df = pd.read_excel(input_path)
 print(f"  Loaded {len(df)} rows from Step 3")
 
 # ── Strip time from all datetime columns ───────────────────────────────────────
-# Converts datetime64 → plain date so Excel shows MM/DD/YYYY not MM/DD/YYYY 00:00:00
+# Normalize to midnight so Excel renders as a clean date (no time component shown)
+# Keep as datetime64 — openpyxl writes it as a real Excel date cell
 for col in df.columns:
     if pd.api.types.is_datetime64_any_dtype(df[col]):
-        df[col] = pd.to_datetime(df[col]).dt.date
+        df[col] = pd.to_datetime(df[col]).dt.normalize()
         print(f"  Stripped time from '{col}' → date only")
 
 # ── Build final column list (order from config) ────────────────────────────────

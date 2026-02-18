@@ -63,10 +63,8 @@ in_bounds = (
 outside_mask = has_coords & ~in_bounds
 
 # Build removal reason string for flagged rows
-df.loc[outside_mask, "_removal_reason"] = (
-    "Outside Florida boundaries (lat=" +
-    df.loc[outside_mask, lat_col].astype(str) + ", lon=" +
-    df.loc[outside_mask, lon_col].astype(str) + ")"
+df.loc[outside_mask, "_removal_reason"] = df.loc[outside_mask].apply(
+    lambda r: f"Outside Florida boundaries (lat={r[lat_col]}, lon={r[lon_col]})", axis=1
 )
 
 # ── Split clean vs removed ─────────────────────────────────────────────────────
