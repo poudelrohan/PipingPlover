@@ -1,8 +1,23 @@
-# ── Data files (never commit raw or processed data) ──────────────────────────
-*.xlsx
-*.xls
+# ── Data files ────────────────────────────────────────────────────────────────
 *.csv
 *.zip
+
+# Allow Excel files ONLY in Databases/
+*.xlsx
+*.xls
+!Databases/**/*.xlsx
+!Databases/**/*.xls
+
+# Exclude large binary GIS files
+Databases/Shapefiles/
+
+# Exclude Excel temp/lock files
+~$*.xlsx
+~$*.xls
+
+# ── Docs ─────────────────────────────────────────────────────────────────────
+*.md
+!README.md
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
