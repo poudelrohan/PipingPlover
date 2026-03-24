@@ -4,13 +4,20 @@ Step 6: Final Report Generation
 Combines all pipeline outputs into a single professional Excel file
 with 3 sheets:
 
-  Sheet 1 — Clean_Data        : fully processed, validated rows
-  Sheet 2 — Removed_Rows      : every removed row with reason + original data
-  Sheet 3 — Summary_Report    : processing statistics with separate sections
-                                for each removal category, coordinate corrections,
-                                location warnings, and coastal buffer warnings
+  Sheet 1 — Clean_Data
+      The fully processed, validated rows ready for biologist use.
 
-Output: database1_FINAL.xlsx
+  Sheet 2 — Removed_Rows
+      Every row that was removed at any step, with columns:
+        unique_id, source_file, source_sheet, removal_reason,
+        + all original data columns
+
+  Sheet 3 — Summary_Report
+      Processing statistics with separate sections for each removal
+      category (geography, missing fields, duplicates), coordinate
+      corrections, location warnings, and coastal buffer warnings.
+
+Output: database2_FINAL.xlsx
 """
 
 import pandas as pd
@@ -20,23 +27,19 @@ from datetime import datetime
 
 # ── Load config ────────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
-from database1_config import config
+from database2_config import config
 
 # ── Resolve paths ──────────────────────────────────────────────────────────────
 script_dir    = os.path.dirname(os.path.abspath(__file__))
 output_folder = os.path.normpath(os.path.join(script_dir, config["output"]["folder"]))
 
-clean_path   = os.path.join(output_folder, "database1_clean.xlsx")
-removed_path = os.path.join(output_folder, "database1_removed.xlsx")
-ids_path     = os.path.join(output_folder, "database1_with_ids.xlsx")
-final_path   = os.path.join(output_folder, "database1_FINAL.xlsx")
+clean_path   = os.path.join(output_folder, "database2_clean.xlsx")
+removed_path = os.path.join(output_folder, "database2_removed.xlsx")
+ids_path     = os.path.join(output_folder, "database2_with_ids.xlsx")
+final_path   = os.path.join(output_folder, "database2_FINAL.xlsx")
 
 # ── Load data ──────────────────────────────────────────────────────────────────
-for path, label in [
-    (clean_path,   "Clean data (Step 5)"),
-    (removed_path, "Removed rows"),
-    (ids_path,     "Original with IDs (Step 1)"),
-]:
+for path, label in [(clean_path, "Clean data (Step 5)"), (removed_path, "Removed rows"), (ids_path, "Original with IDs (Step 1)")]:
     if not os.path.exists(path):
         print(f"[ERROR] Missing file: {path} ({label})")
         print("        Run all previous steps first.")
@@ -81,7 +84,8 @@ for col in ["_geo_warning", "_geo_correction"]:
         removed_sheet = removed_sheet.drop(columns=[col])
 
 front_cols = ["unique_id", "removal_reason", "source_database", "source_file", "source_sheet"]
-clean_cols = [c for c in clean_df.columns if c not in front_cols and c in removed_sheet.columns]
+clean_cols = [c for c in clean_df.columns
+              if c not in front_cols and c in removed_sheet.columns]
 
 final_removed_cols = (
     [c for c in front_cols if c in removed_sheet.columns] +
@@ -105,24 +109,19 @@ geo_reason_counts.columns = ["removal_reason", "count"]
 missing_reason_counts = missing_removals["_removal_reason"].value_counts().reset_index()
 missing_reason_counts.columns = ["removal_reason", "count"]
 
-# Partial location warnings
+# Partial location warnings (rows kept but missing some location fields)
 loc_fields = config["location_fields"]["fields"]
-renames    = config.get("column_rename", {})
 partial_warnings = []
 for _, row in clean_df.iterrows():
-    missing = [
-        f for f in loc_fields
-        if renames.get(f, f) in clean_df.columns
-        and (pd.isna(row.get(renames.get(f, f))) or str(row.get(renames.get(f, f))).strip() == "")
-    ]
+    missing = [f for f in loc_fields if f in clean_df.columns and (pd.isna(row.get(f)) or str(row.get(f)).strip() == "")]
     if 0 < len(missing) < len(loc_fields):
         partial_warnings.append({
             "unique_id":      row.get("unique_id"),
-            "missing_fields": ", ".join(missing),
+            "missing_fields": ", ".join(missing)
         })
 
 # ── Build summary rows ───────────────────────────────────────────────────────
-SECTION = "§"
+SECTION = "\u00a7"
 
 summary_rows = [
     ("Run date",                                            datetime.now().strftime("%Y-%m-%d %H:%M")),
@@ -161,7 +160,7 @@ else:
 summary_rows.append((f"{SECTION}Duplicate Removals", ""))
 summary_rows.append(("Total duplicates removed", len(dup_removals)))
 summary_rows.append(("Criteria used", ", ".join(config["duplicate_criteria"])))
-summary_rows.append(("Note", "Comment fields excluded \u2014 rows with different comments can still be duplicates"))
+summary_rows.append(("Note", "Notes column excluded \u2014 rows with different notes can still be duplicates"))
 
 # ── Coordinate Corrections ────────────────────────────────────────────────────
 summary_rows.append((f"{SECTION}Coordinate Corrections", ""))
@@ -197,10 +196,11 @@ summary_df = pd.DataFrame(summary_rows, columns=["Metric", "Value"])
 
 # ── Write final Excel with 3 sheets ───────────────────────────────────────────
 with pd.ExcelWriter(final_path, engine="openpyxl") as writer:
-    clean_df.to_excel(writer,      sheet_name="Clean_Data",     index=False)
-    removed_sheet.to_excel(writer, sheet_name="Removed_Rows",   index=False)
-    summary_df.to_excel(writer,    sheet_name="Summary_Report", index=False)
+    clean_df.to_excel(writer,    sheet_name="Clean_Data",     index=False)
+    removed_sheet.to_excel(writer, sheet_name="Removed_Rows", index=False)
+    summary_df.to_excel(writer,  sheet_name="Summary_Report", index=False)
 
+    # ── Formatting ─────────────────────────────────────────────────────────────
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
 
@@ -215,7 +215,7 @@ with pd.ExcelWriter(final_path, engine="openpyxl") as writer:
     }
 
     # Date columns to format (after rename)
-    date_cols = {"ObservationDate"}
+    date_cols = {"SurveyDate"}
 
     for sheet_name in ["Clean_Data", "Removed_Rows", "Summary_Report"]:
         ws   = wb[sheet_name]
@@ -236,7 +236,7 @@ with pd.ExcelWriter(final_path, engine="openpyxl") as writer:
                         if row.row > 1:
                             row.number_format = "MM/DD/YYYY"
 
-        # Summary_Report: bold section header rows
+        # Summary_Report: bold section header rows (marked with §)
         if sheet_name == "Summary_Report":
             for row in ws.iter_rows(min_row=2):
                 cell = row[0]
@@ -244,7 +244,7 @@ with pd.ExcelWriter(final_path, engine="openpyxl") as writer:
                     cell.value = str(cell.value).replace(SECTION, "")
                     for c in row:
                         c.font = section_font
-                        c.fill = PatternFill("solid", fgColor="E3F2FD")
+                        c.fill = PatternFill("solid", fgColor="E3F2FD")  # light blue bg
 
         # Auto-fit column widths
         for col in ws.columns:

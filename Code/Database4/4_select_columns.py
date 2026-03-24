@@ -36,13 +36,19 @@ if not os.path.exists(input_path):
 df = pd.read_excel(input_path)
 print(f"  Loaded {len(df)} rows from Step 3")
 
-# ── Strip time from all datetime columns ───────────────────────────────────────
-# Normalize to midnight so Excel renders as a clean date (no time component shown)
-# Keep as datetime64 — openpyxl writes it as a real Excel date cell
+# ── Handle datetime columns ───────────────────────────────────────────────────
+# Date columns: strip time component so Excel renders clean dates
+# Time columns: extract just the time (HH:MM:SS), drop the dummy 1900 date
+time_columns = {"StartTime", "EndTime"}
 for col in df.columns:
     if pd.api.types.is_datetime64_any_dtype(df[col]):
-        df[col] = pd.to_datetime(df[col]).dt.normalize()
-        print(f"  Stripped time from '{col}' → date only")
+        if col in time_columns:
+            df[col] = pd.to_datetime(df[col]).dt.strftime("%H:%M:%S")
+            df[col] = df[col].replace("NaT", None)
+            print(f"  Extracted time from '{col}' → time only")
+        else:
+            df[col] = pd.to_datetime(df[col]).dt.normalize()
+            print(f"  Stripped time from '{col}' → date only")
 
 # ── Build final column list (order from config) ────────────────────────────────
 keep = config["columns_to_keep"]
@@ -55,9 +61,10 @@ if missing_cols:
 # Follow config order exactly, only include columns that exist
 keep_ordered = [c for c in keep if c in df.columns]
 
-# Always append _removal_reason at the very end for internal pipeline use
-if "_removal_reason" in df.columns and "_removal_reason" not in keep_ordered:
-    keep_ordered.append("_removal_reason")
+# Always append internal tracking columns at the very end for pipeline use
+for internal_col in ["_removal_reason", "_geo_warning", "_geo_correction"]:
+    if internal_col in df.columns and internal_col not in keep_ordered:
+        keep_ordered.append(internal_col)
 
 # Log what's being dropped
 all_cols = list(df.columns)

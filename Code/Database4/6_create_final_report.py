@@ -13,13 +13,9 @@ with 3 sheets:
         + all original data columns
 
   Sheet 3 — Summary_Report
-      Processing statistics:
-        - Total rows input
-        - Rows removed per reason (counts + percentages)
-        - Rows in final clean dataset
-        - Partial location warnings (rows kept but missing some location data)
-        - Duplicate criteria used
-        - Date pipeline was run
+      Processing statistics with separate sections for each removal
+      category (geography, missing fields, duplicates), coordinate
+      corrections, location warnings, and coastal buffer warnings.
 
 Output: database4_FINAL.xlsx
 """
@@ -57,19 +53,40 @@ print(f"  Clean rows   : {len(clean_df)}")
 print(f"  Removed rows : {len(removed_df)}")
 print(f"  Total input  : {len(original)}")
 
+# ── Extract internal columns before dropping them from Clean_Data ─────────────
+geo_warnings = []
+if "_geo_warning" in clean_df.columns:
+    warned = clean_df[clean_df["_geo_warning"].notna()]
+    for _, row in warned.iterrows():
+        geo_warnings.append({
+            "unique_id": row.get("unique_id"),
+            "warning":   row["_geo_warning"],
+        })
+    clean_df = clean_df.drop(columns=["_geo_warning"])
+
+geo_corrections = []
+if "_geo_correction" in clean_df.columns:
+    corrected = clean_df[clean_df["_geo_correction"].notna()]
+    for _, row in corrected.iterrows():
+        geo_corrections.append({
+            "unique_id":  row.get("unique_id"),
+            "correction": row["_geo_correction"],
+        })
+    clean_df = clean_df.drop(columns=["_geo_correction"])
+
 # ── Sheet 2: Removed_Rows ──────────────────────────────────────────────────────
-# Use the same clean column order as Clean_Data, with tracking + reason up front
 removed_sheet = removed_df.copy()
 removed_sheet = removed_sheet.rename(columns={"_removal_reason": "removal_reason"})
 
-# Front: tracking + reason
-front_cols = ["unique_id", "removal_reason", "source_database", "source_file", "source_sheet"]
+# Drop internal columns from removed sheet too
+for col in ["_geo_warning", "_geo_correction"]:
+    if col in removed_sheet.columns:
+        removed_sheet = removed_sheet.drop(columns=[col])
 
-# Middle: same biologist columns as Clean_Data (only those that exist in removed)
+front_cols = ["unique_id", "removal_reason", "source_database", "source_file", "source_sheet"]
 clean_cols = [c for c in clean_df.columns
               if c not in front_cols and c in removed_sheet.columns]
 
-# Assemble final column order
 final_removed_cols = (
     [c for c in front_cols if c in removed_sheet.columns] +
     clean_cols
@@ -81,10 +98,16 @@ total_input   = len(original)
 total_clean   = len(clean_df)
 total_removed = len(removed_df)
 
-# Breakdown by removal reason
-reason_counts = removed_df["_removal_reason"].value_counts().reset_index()
-reason_counts.columns = ["removal_reason", "count"]
-reason_counts["percentage"] = (reason_counts["count"] / total_input * 100).round(2).astype(str) + "%"
+# ── Categorize removal reasons ────────────────────────────────────────────────
+geo_removals     = removed_df[removed_df["_removal_reason"].str.startswith("Outside Florida", na=False)]
+missing_removals = removed_df[removed_df["_removal_reason"].str.startswith("Missing", na=False)]
+dup_removals     = removed_df[removed_df["_removal_reason"].str.startswith("Duplicate", na=False)]
+
+geo_reason_counts = geo_removals["_removal_reason"].value_counts().reset_index()
+geo_reason_counts.columns = ["removal_reason", "count"]
+
+missing_reason_counts = missing_removals["_removal_reason"].value_counts().reset_index()
+missing_reason_counts.columns = ["removal_reason", "count"]
 
 # Partial location warnings (rows kept but missing some location fields)
 loc_fields = config["location_fields"]["fields"]
@@ -97,8 +120,8 @@ for _, row in clean_df.iterrows():
             "missing_fields": ", ".join(missing)
         })
 
-# Build summary rows — section headers use a marker so we can bold them in formatting
-SECTION = "§"  # marker prefix for section header rows
+# ── Build summary rows ───────────────────────────────────────────────────────
+SECTION = "§"
 
 summary_rows = [
     ("Run date",                                            datetime.now().strftime("%Y-%m-%d %H:%M")),
@@ -111,12 +134,44 @@ summary_rows = [
     ("Total rows in Clean_Data",                            total_clean),
     ("Total rows removed",                                  total_removed),
     ("Percentage of rows kept",                             f"{round(total_clean / total_input * 100, 2)}%"),
-    (f"{SECTION}Removal Breakdown",                         ""),
 ]
 
-for _, r in reason_counts.iterrows():
-    summary_rows.append((f"  {r['removal_reason']}", f"{r['count']} rows ({r['percentage']})"))
+# ── Geography Removals ────────────────────────────────────────────────────────
+summary_rows.append((f"{SECTION}Geography Removals", ""))
+summary_rows.append(("Total removed for geography", len(geo_removals)))
 
+if len(geo_removals) > 0:
+    for _, r in geo_reason_counts.iterrows():
+        summary_rows.append((f"  {r['removal_reason']}", f"{r['count']} rows"))
+else:
+    summary_rows.append(("  None", ""))
+
+# ── Missing Field Removals ────────────────────────────────────────────────────
+summary_rows.append((f"{SECTION}Missing Field Removals", ""))
+summary_rows.append(("Total removed for missing fields", len(missing_removals)))
+
+if len(missing_removals) > 0:
+    for _, r in missing_reason_counts.iterrows():
+        summary_rows.append((f"  {r['removal_reason']}", f"{r['count']} rows"))
+else:
+    summary_rows.append(("  None", ""))
+
+# ── Duplicate Removals ────────────────────────────────────────────────────────
+summary_rows.append((f"{SECTION}Duplicate Removals", ""))
+summary_rows.append(("Total duplicates removed", len(dup_removals)))
+summary_rows.append(("Criteria used", ", ".join(config["duplicate_criteria"])))
+
+# ── Coordinate Corrections ────────────────────────────────────────────────────
+summary_rows.append((f"{SECTION}Coordinate Corrections", ""))
+summary_rows.append(("Rows with auto-corrected coordinates", len(geo_corrections)))
+
+if geo_corrections:
+    for c in geo_corrections:
+        summary_rows.append((f"  unique_id {c['unique_id']}", c["correction"]))
+else:
+    summary_rows.append(("  None", ""))
+
+# ── Location Warnings ─────────────────────────────────────────────────────────
 summary_rows.append((f"{SECTION}Location Warnings", ""))
 summary_rows.append(("Rows with partial location data (kept but flagged)", len(partial_warnings)))
 
@@ -126,8 +181,15 @@ if partial_warnings:
 else:
     summary_rows.append(("  None", ""))
 
-summary_rows.append((f"{SECTION}Duplicate Criteria", ""))
-summary_rows.append(("Columns used to detect duplicates", ", ".join(config["duplicate_criteria"])))
+# ── Coastal Buffer Warnings ───────────────────────────────────────────────────
+summary_rows.append((f"{SECTION}Coastal Buffer Warnings", ""))
+summary_rows.append(("Rows kept but within coastal buffer (not on land)", len(geo_warnings)))
+
+if geo_warnings:
+    for w in geo_warnings:
+        summary_rows.append((f"  unique_id {w['unique_id']}", w["warning"]))
+else:
+    summary_rows.append(("  None", ""))
 
 summary_df = pd.DataFrame(summary_rows, columns=["Metric", "Value"])
 

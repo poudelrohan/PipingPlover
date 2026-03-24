@@ -16,14 +16,14 @@ config = {
     },
 
     # ── Geography Validation ───────────────────────────────────────────────────
-    # Rows outside Florida bounding box → removed, reason logged
+    # Uses actual Florida state boundary (shapefile) + 1 km coastal buffer
+    # so beach / barrier-island points are not falsely rejected
     "geography": {
         "lat_column": "Latitude",
         "lon_column": "Longitude",
-        "lat_min": 24.396308,
-        "lat_max": 31.000968,
-        "lon_min": -87.634938,
-        "lon_max": -80.031362,
+        "shapefile": "../../Databases/Shapefiles/us_states/tl_2023_us_state.shp",
+        "state_fips": "12",            # Florida FIPS code
+        "buffer_meters": 1000,         # 1 km beyond the coastline
     },
 
     # ── Location Fields Rule ───────────────────────────────────────────────────
@@ -57,6 +57,8 @@ config = {
 
         # ── Sighting Event ──────────────────────
         "ResightDate",
+        "StartTime",       # keep it, if its empty its alright
+        "EndTime",         # keep it, if its empty its alright
         "LocationName",
         "Latitude",
         "Longitude",
