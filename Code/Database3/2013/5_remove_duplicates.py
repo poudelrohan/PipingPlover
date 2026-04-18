@@ -2,11 +2,12 @@
 Step 5: Duplicate Removal
 ──────────────────────────
 Identifies duplicates based on config["duplicate_criteria"]:
-  Route + Latitude + Longitude + SurveyDate + TotalObserved
+  Route + Latitude + Longitude + SurveyDate + TotalObserved + FlagCode + FlagColor + BandCombo
 
 Rules:
   - First occurrence kept, subsequent removed
   - Null values in criteria treated as equal
+  - Criteria columns not present in this year's data are silently skipped
 
 Output: db3_<year>_clean.xlsx  (in Output/<year>/)
 """
@@ -22,7 +23,8 @@ from database3_config import config, get_output_folder, get_filename
 # ── Resolve paths ──────────────────────────────────────────────────────────────
 script_dir    = os.path.dirname(os.path.abspath(__file__))
 output_folder = get_output_folder(script_dir)
-year = config["active_year"]
+
+year = config["year"]
 
 input_path   = os.path.join(output_folder, get_filename("columns_selected"))
 output_path  = os.path.join(output_folder, get_filename("clean"))
@@ -37,10 +39,10 @@ if not os.path.exists(input_path):
 df = pd.read_excel(input_path)
 print(f"  Loaded {len(df)} rows from Step 4 ({year})")
 
-# ── Map duplicate criteria to current column names ─────────────────────────────
-renames  = config.get("column_rename", {})
+# ── Map duplicate criteria (apply any column renames) ─────────────────────────
+renames           = config.get("column_rename", {})
 criteria_original = config["duplicate_criteria"]
-criteria = [renames.get(c, c) for c in criteria_original]
+criteria          = [renames.get(c, c) for c in criteria_original]
 
 if not criteria:
     print("  [WARNING] No duplicate_criteria defined in config. Skipping.")
@@ -51,12 +53,13 @@ missing = [c for c in criteria if c not in df.columns]
 if missing:
     print(f"  [NOTE] Criteria columns not in this year's data (skipping): {missing}")
 criteria = [c for c in criteria if c in df.columns]
+
 if not criteria:
     print("  [WARNING] No usable duplicate criteria after filtering. Skipping.")
     df.to_excel(output_path, index=False)
     sys.exit(0)
 
-# Ensure _removal_reason is object dtype (pandas 3.x fix)
+# Ensure _removal_reason column exists with correct dtype
 if "_removal_reason" in df.columns:
     df["_removal_reason"] = df["_removal_reason"].astype("object")
 else:

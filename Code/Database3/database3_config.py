@@ -183,7 +183,7 @@ config = {
     "column_rename": {},
 
     # ── Duplicate Criteria ────────────────────────────────────────────────────
-    "duplicate_criteria": ["Route", "Latitude", "Longitude", "SurveyDate", "TotalObserved", "FlagCode"],
+    "duplicate_criteria": ["Route", "Latitude", "Longitude", "SurveyDate", "TotalObserved", "FlagCode", "FlagColor", "BandCombo"],
 
 }
 
