@@ -38,6 +38,8 @@ These are NOT fixed in the clean files — they are flagged here so the
 | DS2 | Several routes appear twice with identical counts (Anclote Key, Three Rooker, etc.) | Duplicate DS2 submissions |
 | Martin County IRL | DS2 PIPL column has `PIPLbands` as free-text band description instead of a count | Wrong data type in column |
 | Pavilion Key | In DS3 but not in DS1 — unmatched band resight rows | DS3 mismatch |
+| Navarre Beach | DS3 spells route "Navarre Beach Soundside" (one word) but DS1/DS2 spell it "Navarre Beach Sound Side" (two words) — spacing mismatch prevents matching | Route name formatting |
+| Bunche Beach | DS3 records group 1 but DS1 only has group 2 (15 PIPL) — group number recording error; DS3 group reassigned to 2 for matching | DS3 group # recording error |
 
 ---
 
