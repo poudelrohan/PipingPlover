@@ -1,10 +1,11 @@
 """
-Clean 2017 Winter Bird Survey — filter to PIPL rows only
-─────────────────────────────────────────────────────────
+Clean 2017 Winter Bird Survey — filter to PIPL rows and columns only
+─────────────────────────────────────────────────────────────────────
 Reads the raw 2017 file and produces Winter Birds '17 Clean.xlsx with:
-  - DS1: rows where focal species contains "PIPL" (66 → keep)
-  - DS2: rows where Piping Plover count > 0 (route-level summaries)
-  - DS3: rows where Species contains "PIPL" (47 → keep)
+  - DS1: rows where focal species contains "PIPL"; all 16 named cols kept
+  - DS2: rows where Piping Plover > 0; route metadata + Piping Plover
+         column only (all other species columns dropped)
+  - DS3: rows where Species contains "PIPL"; all 16 named cols kept
 
 No data values are changed — this is purely a row/column filter.
 
@@ -30,13 +31,26 @@ print(f"DS1: {len(ds1)} rows → {len(ds1_pipl)} PIPL rows kept")
 
 # ── DS2 ────────────────────────────────────────────────────────────────────────
 # header_row=0 (column names are the very first row — different from 2016!)
-# Keep rows where Piping Plover count > 0
+# Keep rows where Piping Plover > 0; keep route metadata + Piping Plover only
 ds2 = pd.read_excel(input_path, sheet_name="DATA SHEET 2", header=0)
 named_cols_ds2 = [c for c in ds2.columns if not str(c).startswith("Unnamed")]
 ds2 = ds2[named_cols_ds2]
 pipl_col = "Piping Plover"
 ds2_pipl = ds2[pd.to_numeric(ds2[pipl_col], errors="coerce").fillna(0) > 0].copy()
-print(f"DS2: {len(ds2)} rows → {len(ds2_pipl)} PIPL route rows kept")
+
+# Drop all other species columns — keep only route info + Piping Plover + Comments
+route_meta_cols = [
+    "Date", "Observer(s)", "Lead Observer's phone & email",
+    "Route Name/ Description", "County",
+    "Route Start (Latitude)", "Route Start (Longitude)",
+    "Route End (Latitude)", "Route End (Longitude)",
+    "Route Start & End Times", "Weather Condition",
+]
+comments_col = [c for c in ds2_pipl.columns if "Comment" in str(c)]
+ds2_keep = route_meta_cols + [pipl_col] + comments_col
+ds2_keep = [c for c in ds2_keep if c in ds2_pipl.columns]   # guard missing cols
+ds2_pipl = ds2_pipl[ds2_keep]
+print(f"DS2: {len(ds2)} rows → {len(ds2_pipl)} PIPL route rows, {len(ds2_pipl.columns)} cols kept")
 
 # ── DS3 ────────────────────────────────────────────────────────────────────────
 # header_row=1 (row 0 = instructions, row 1 = column names)
