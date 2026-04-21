@@ -16,8 +16,12 @@ PIPL counts, normalizes columns, and merges via Option A expansion.
      → handled automatically by normalize_route (whitespace collapsed + stripped)
   ⑥ Highland Beach group 2 and New Smyrna Beach group 6 have positive longitudes
      → auto-corrected in Step 2 (geography validator); no Step 0 fix needed
-  ⑦ Pavilion Key: DS3 rows have no DS1 match → included as standalone banded-bird
-     rows with NaN GPS (same as standard unmatched DS3 handling)
+  ⑦ Unmatched DS3 rows: if the route exists anywhere in DS1 (same date), GPS is
+     borrowed from that DS1 entry and the row is kept with an "approx GPS" note.
+     If the route has NO DS1 entry at all, the row is dropped — band info without
+     any location is not useful enough to keep.
+     Pavilion Key DS3 (group 1, no DS1 group 1): DS1 has Pavilion Key group 4 with
+     GPS, so those coordinates are borrowed.
   ⑧ DS3 Navarre Beach Soundside route name → corrected to "Navarre Beach Sound Side"
      to match DS1/DS2 spelling (spacing difference causes match failure)
   ⑨ DS3 Bunche Beach group 1 → reassigned to group 2 to match DS1
@@ -459,30 +463,79 @@ for _, flock_row in df.iterrows():
                   f"at {flock_row.get('Route')} grp {flock_group} on {str(flock_date)[:10]}")
 
 # ── ⑦ Handle unmatched DS3 rows ───────────────────────────────────────────────
-# Pavilion Key DS3 rows have no DS1 match — included as standalone banded-bird
-# rows with NaN GPS. No routes require forced removal in 2017.
+# Rule: a DS3 row with no group-level DS1 match is only useful if we can give it
+# a location. Strategy:
+#   • If the route + date appears anywhere in DS1 → borrow GPS from that DS1 entry
+#     and keep the row (with a comment noting the GPS is approximate).
+#   • If the route has NO DS1 entry at all → drop the row entirely. Band info
+#     without any location is not meaningful for analysis.
 
-unmatched_bands = bands[~bands.index.isin(matched_band_indices)]
-standalone_kept = 0
+unmatched_bands   = bands[~bands.index.isin(matched_band_indices)]
+standalone_kept   = 0
+standalone_dropped = 0
 
 for _, band_row in unmatched_bands.iterrows():
+    band_route  = band_row.get("_band_route")
+    band_date   = band_row.get("_band_date")
     band_comment = band_row.get("_band_comments", "")
+    route_norm  = normalize_route(str(band_route))
+    date_str    = str(band_date)[:10]
+
+    # Look for any DS1 row at same route + date (group number may differ).
+    # Use substring matching in both directions: DS3 "Pavilion Key" should match
+    # DS1 "Everglades City to Pavilion Key", and vice versa.
+    ds1_routes_norm = df["Route"].apply(normalize_route)
+    route_match = (
+        (ds1_routes_norm == route_norm) |
+        ds1_routes_norm.str.contains(route_norm, regex=False) |
+        pd.Series([route_norm in r for r in ds1_routes_norm], index=df.index)
+    )
+    ds1_match = df[
+        route_match &
+        (df["SurveyDate"].astype(str).str[:10] == date_str) &
+        df["Latitude"].notna() & df["Longitude"].notna()
+    ]
+
+    if ds1_match.empty:
+        # No DS1 entry for this route — drop, nothing to anchor it geographically
+        standalone_dropped += 1
+        print(f"    [DROP] Unmatched DS3 row dropped — route '{band_route}' has no DS1 entry "
+              f"(no GPS available): grp {band_row.get('_band_group')}, {date_str}")
+        continue
+
+    # Borrow GPS from first DS1 row found at this route
+    ref = ds1_match.iloc[0]
+    lat = ref["Latitude"]
+    lon = ref["Longitude"]
+
+    comment_parts = []
+    if pd.notna(band_comment) and str(band_comment).strip():
+        comment_parts.append(str(band_comment).strip())
+    comment_parts.append(
+        f"GPS approx: no group match in DS1 — coordinates from DS1 group {ref['GroupNumber']} "
+        f"at same route/date"
+    )
+
     row_data = {
-        "SurveyDate":    band_row.get("_band_date"),
-        "Route":         band_row.get("_band_route"),
+        "SurveyDate":    band_date,
+        "Route":         band_route,
         "GroupNumber":   band_row.get("_band_group"),
         "Observer":      band_row.get("_band_observer", ""),
         "TotalObserved": 1,
         "FlagCode":      band_row.get("FlagCode", ""),
         "FlagColor":     band_row.get("FlagColor", ""),
         "BandCombo":     band_row.get("BandCombo", ""),
-        "Comments":      str(band_comment).strip() if pd.notna(band_comment) else "",
+        "Comments":      " | ".join(comment_parts),
+        "Latitude":      lat,
+        "Longitude":     lon,
     }
     standalone_kept += 1
     expanded_rows.append(row_data)
 
 if standalone_kept:
-    print(f"  [INFO] {standalone_kept} unmatched DS3 row(s) kept as standalone banded-bird row(s) with NaN GPS")
+    print(f"  [INFO] {standalone_kept} unmatched DS3 row(s) kept with GPS borrowed from DS1 same-route entry")
+if standalone_dropped:
+    print(f"  [INFO] {standalone_dropped} unmatched DS3 row(s) dropped — no DS1 entry found for route")
 
 df = pd.DataFrame(expanded_rows)
 print(f"\n  After Option A expansion: {len(df)} total rows")
