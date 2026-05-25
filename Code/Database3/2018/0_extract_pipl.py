@@ -4,24 +4,23 @@ Step 0: Extract PIPL Data — 2018
 Reads the Band Review file (wide format, one row per route) and melts it
 into one row per bird per point, applying Option A band expansion.
 
+Band data source priority per (route, point):
+  1. Biologist correction  — from Biologist_Band_Review_Completed_2018-2019.xlsx col H
+  2. Our interpretation    — from the same file col F (already structured 1)/2)/3))
+  3. Raw Band Review text  — fallback if the review file has no entry for this point
+
 Wide → Long logic (per route row):
   For each point N in [1,2,3,...,15,17,19]:
     • Skip if {N}PIPL is null or 0
     • Skip if {N}Lat / {N}Long are both null AND no GPS can be borrowed
       from another year (row logged to Removed sheet)
-    • Parse band entries from {N}PIPLbands (already structured "1) ... \\n2) ...")
+    • Parse band entries (strip N) prefix, split on newlines)
     • Option A expansion:
-        - k banded entries → k rows with TotalObserved=1, BandCombo=raw entry text
+        - k banded entries → k rows with TotalObserved=1, BandCombo=band string
         - remainder = {N}PIPL − k → 1 row with TotalObserved=remainder, no band info
         - if k == 0: 1 row with TotalObserved={N}PIPL, no band info
 
-GPS fallback:
-  If a point has PIPL > 0 but no GPS, the script searches all other years'
-  clean files for the same (route, point) and borrows coordinates if found.
-  If nothing is found the row is dropped and logged.
-
 Output: db3_2018_extracted.xlsx  (in Output/2018/)
-        db3_2018_removed.xlsx    (in Output/2018/)  ← GPS-dropped rows
 """
 
 import pandas as pd
@@ -96,6 +95,9 @@ def parse_band_entries(text):
     if not text or text.lower() == "no banded birds":
         return []
 
+    # Normalise inline numbering: "1) bird1 2) bird2" → "1) bird1\n2) bird2"
+    text = re.sub(r'(?<!\n)(\s+)(\d+\)\s*)', r'\n\2', text)
+
     entries = []
     for line in text.split("\n"):
         line = line.strip()
@@ -111,6 +113,64 @@ def parse_band_entries(text):
         entries = [text]
 
     return entries
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Biologist Corrections — override raw band text with reviewed data
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_biologist_corrections():
+    """
+    Read the completed biologist review file and build:
+      (normalized_route, point_N) → corrected_band_text
+
+    Priority: col H (correction) if filled, else col F (our interpretation).
+    If the correction text is a meta-instruction (e.g. "treat as unbanded")
+    rather than actual band data, map to empty string → pipeline treats as
+    no banded birds at that point.
+    """
+    review_path = (
+        Path(script_dir).parents[2]
+        / "Databases" / "Database3BiologistReview"
+        / "Biologist_Band_Review_Completed_2018-2019.xlsx"
+    )
+    if not review_path.exists():
+        print(f"  [INFO] No biologist review file found — using raw Band Review data")
+        return {}
+
+    import openpyxl
+    wb = openpyxl.load_workbook(review_path)
+    ws = wb["2018"]
+    corrections = {}
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        route      = str(row[0] or "").strip()
+        point      = row[1]
+        interp     = str(row[5] or "").strip()   # col F — our interpretation
+        correction = str(row[7] or "").strip()   # col H — biologist correction
+
+        if not route or not point:
+            continue
+
+        # Choose the best available text: correction > interpretation
+        text = correction if correction else interp
+
+        if not text:
+            continue
+
+        # Detect meta-instructions like "treat as unbanded bird" — not actual band data
+        t_lower = text.lower()
+        if "unbanded" in t_lower and "1)" not in t_lower:
+            text = ""   # empty → all birds at this point treated as unbanded
+
+        key = (normalize_route(route), int(point))
+        corrections[key] = text
+
+    n_corrections = sum(1 for v in corrections.values() if v)
+    n_unbanded    = sum(1 for v in corrections.values() if not v)
+    print(f"  Biologist corrections loaded: {n_corrections} band entries, "
+          f"{n_unbanded} points overridden to unbanded")
+    return corrections
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -212,6 +272,9 @@ print()
 df_raw = pd.read_excel(input_path, sheet_name=config["sheet"], header=config["header_row"])
 print(f"  Loaded {len(df_raw)} route rows from Band Review")
 
+# ── Load biologist corrections ─────────────────────────────────────────────────
+bio_corrections = build_biologist_corrections()
+
 # ── Build GPS lookup from other years ─────────────────────────────────────────
 gps_lookup = build_gps_lookup()
 
@@ -290,14 +353,12 @@ for _, route_row in df_raw.iterrows():
         # GPS at this point
         lat = parse_coord(route_row.get(pc.get("lat"))) if "lat" in pc else None
         lon = parse_coord(route_row.get(pc.get("long"))) if "long" in pc else None
-        gps_note = None
 
         if lat is None or lon is None:
-            # Try borrowing from another year
+            # Try borrowing from another year (logged to console only, not added to Comments)
             key = (normalize_route(route), n)
             if key in gps_lookup:
                 lat, lon, src_yr = gps_lookup[key]
-                gps_note = f"GPS borrowed from {src_yr} — point {n} had no coordinates in 2018"
                 stats["points_gps_borrowed"] += 1
                 print(f"  [GPS BORROW] {route} pt {n}: lat={lat}, lon={lon} (from {src_yr})")
             else:
@@ -313,8 +374,11 @@ for _, route_row in df_raw.iterrows():
                 print(f"  [DROP] {route} pt {n}: PIPL={pipl_count}, no GPS in any year")
                 continue
 
-        # Band entries
-        bands_raw  = route_row.get(pc.get("bands")) if "bands" in pc else None
+        # Band entries — use biologist correction if available, else raw Band Review text
+        bands_raw = route_row.get(pc.get("bands")) if "bands" in pc else None
+        bio_key   = (normalize_route(route), n)
+        if bio_key in bio_corrections:
+            bands_raw = bio_corrections[bio_key]   # "" = unbanded, string = corrected combo
         band_list  = parse_band_entries(bands_raw)
         n_banded   = len(band_list)
         remainder  = pipl_count - n_banded
@@ -337,10 +401,8 @@ for _, route_row in df_raw.iterrows():
             "ObserverEmail":    str(email).strip() if pd.notna(email) else None,
             "FlagCode":         None,
             "FlagColor":        None,
-            "Comments":         comments,
+            "Comments":         comments,   # original observer text only — no pipeline notes
         }
-        if gps_note:
-            base["Comments"] = (comments + " | " + gps_note) if comments else gps_note
 
         # ── Banded rows ──────────────────────────────────────────────────────
         for band_text in band_list:
