@@ -8,7 +8,8 @@ Data cleaning pipeline for Florida Piping Plover (PIPL) observation databases. E
 |----------|-------------|---------------|--------|
 | Database 1 | eBird observations | `Databases/Database1/Output/database1_FINAL.xlsx` | ✅ Complete (25,392 clean rows) |
 | Database 2 | Non-breeding survey (2011–2023) | `Databases/Database2/Output/database2_FINAL.xlsx` | ✅ Complete (5,937 clean rows) |
-| Database 3 | Winter Bird Survey (2013–2024) | `Databases/Database3/Output/<year>/db3_<year>_FINAL.xlsx` | 🔄 In progress (2013–2019 done) |
+| Database 3 | Winter Bird Survey (2013–2024) | `Databases/Database3/Output/<year>/db3_<year>_FINAL.xlsx` | ✅ Complete (all 12 years 2013–2024) |
+| Database 3 — combined | All 12 years merged into one workbook | `Databases/Database3/Output/AllYears/db3_ALL_YEARS_FINAL.xlsx` | ✅ Complete (1,093 rows) |
 | Database 4 | Banded bird resights | `Databases/Database4/Output/database4_FINAL.xlsx` | ✅ Complete (192 clean rows) |
 
 Each final file (`_FINAL.xlsx`) has 3 sheets:
@@ -34,7 +35,11 @@ Database 3 is the most complex. Each year has its own self-contained pipeline un
 | 2017 | 103 | 276 | — | 0 | All rows have GPS |
 | 2018 | 118 | 306 | 74 | 0 | Wide format; biologist-corrected band data |
 | 2019 | 109 | 314 | 44 | 1 | Wide format; pt1 lon from raw file; biologist-corrected |
-| 2020–2024 | — | — | — | — | Pipelines pending biologist band review |
+| 2020 | 72 | 307 | 25 | 0 | Metadata joined from All Species sheet |
+| 2021 | 106 | 254 | 39 | 0 | 1 longitude sign auto-corrected |
+| 2022 | 100 | 278 | 35 | 0 | Biscayne route alias; degree-symbol GPS parse fix |
+| 2023 | 85 | 354 | 37 | 1 | All Species column layout shifted (Transect renamed) |
+| 2024 | 108 | 322 | 36 | 0 | 12 forced-unbanded directives applied |
 
 ### Format Changes by Year
 
@@ -42,7 +47,7 @@ Database 3 is the most complex. Each year has its own self-contained pipeline un
 |-------|--------|-------|-----------|
 | 2013–2017 | DS1 (flocks) + DS3 (resights) | Multiple sheets | Structured per-bird |
 | 2018–2019 | Wide format — one row per route, groups as columns | Single sheet | Free text in `{N}PIPLbands` |
-| 2020–2024 | Wide format — Focal Observations sheet | Two sheets | Free text in `PIPL Band/Flag Codes (point N)` |
+| 2020–2024 | Wide format — Focal Observations sheet | Two sheets (metadata joined from All Species) | Free text in `PIPL Band/Flag Codes (point N)` |
 
 ### Merge Strategy (Option A Expansion)
 
@@ -84,6 +89,36 @@ Output lands in `Databases/Database3/Output/<year>/db3_<year>_FINAL.xlsx`.
 
 ---
 
+## Combining All Years
+
+After all per-year pipelines have run, one script merges every year into a single workbook for biologist review:
+
+```bash
+cd Code/Database3
+python3 combine_all_years.py
+```
+
+This populates `Databases/Database3/Output/AllYears/`:
+
+- Copies of every `db3_<year>_FINAL.xlsx` (2013–2024)
+- `db3_ALL_YEARS_FINAL.xlsx` — combined workbook with 14 sheets:
+  - `All_Years_Combined` — 1,093 rows stacked in year order
+  - `Summary` — one row per year of stats (routes, PIPL, banded, unbanded, % banded) + a TOTAL row
+  - `2013`, `2014`, …, `2024` — per-year slices for easy click-through
+
+The combined view adds four columns at the front:
+
+| Column | Description |
+|--------|-------------|
+| `unique_id` | New global sequential int (1..N). Regenerated each run. |
+| `database` | `3` (placeholder for future merges with DB1/2/4). |
+| `year_id` | `<year>_<4-digit-original-id>` — stable citable key that survives pipeline re-runs. |
+| `SurveyYear` | Int year, derived from `SurveyDate`. |
+
+No rows are removed in this step — cross-year duplicates (same route/point/band combo in different years) are valid distinct annual observations.
+
+---
+
 ## Folder Structure
 
 ```
@@ -92,12 +127,15 @@ Databases/
   Database2/                     ← Non-breeding PIPL survey data
   Database3/                     ← Raw yearly survey files (2013–2024)
     Output/
-      2013/ … 2019/              ← Per-year pipeline outputs
-        db3_<year>_FINAL.xlsx    ← FINAL CLEAN FILE
+      2013/ … 2024/              ← Per-year pipeline outputs
+        db3_<year>_FINAL.xlsx    ← FINAL CLEAN FILE (per year)
+      AllYears/                  ← Copies of all 12 year FINAL files +
+        db3_ALL_YEARS_FINAL.xlsx ← combined 14-sheet workbook
   Database3Clean/                ← PIPL-filtered versions of raw files
   Database3BandReview/           ← AI-structured band cells (Stage 1 output)
   Database3AIBandReview/         ← AI-reviewed band cells (work in progress)
-  Database3BiologistReview/      ← Biologist review workbooks (Stage 2)
+  Database3BiologistReview/      ← Biologist review workbooks (Stage 2,
+                                   one Completed_<year>.xlsx per year)
   Database4/                     ← Banded bird resight data
 
 Code/
@@ -108,7 +146,8 @@ Code/
     parse_bands_2018.py          ← Band Review generator for 2018
     parse_bands.py               ← Band Review generator for 2019–2024
     generate_biologist_review.py ← Biologist review Excel generator
-    2013/ … 2019/                ← Per-year self-contained pipelines
+    combine_all_years.py         ← Merge all 12 years into AllYears/
+    2013/ … 2024/                ← Per-year self-contained pipelines
       database3_config.py        ← Year-specific config
       0_extract_pipl.py          ← Extract + merge + Option A expansion
       1_add_ids.py               ← Assign unique_id and source columns
