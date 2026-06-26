@@ -39,6 +39,19 @@ if not os.path.exists(input_path):
 df = pd.read_excel(input_path)
 print(f"  Loaded {len(df)} rows from Step 1 ({year})")
 
+# ── Pick up rows pre-flagged for removal in Step 0 ────────────────────────────
+# Step 0 may set _removal_reason on rows that are known-bad (e.g. unmatched DS3
+# rows that belong in Removed_Rows rather than Clean_Data).
+if "_removal_reason" in df.columns:
+    pre_flagged = df[df["_removal_reason"].notna()].copy()
+    df          = df[df["_removal_reason"].isna()].copy()
+    if len(pre_flagged) > 0:
+        if os.path.exists(removed_path):
+            existing    = pd.read_excel(removed_path)
+            pre_flagged = pd.concat([existing, pre_flagged], ignore_index=True)
+        pre_flagged.to_excel(removed_path, index=False)
+        print(f"  Moved {len(pre_flagged)} pre-flagged row(s) to Removed_Rows (reason set in Step 0)")
+
 # ── Geography config ───────────────────────────────────────────────────────────
 geo     = config["geography"]
 lat_col = geo["lat_column"]

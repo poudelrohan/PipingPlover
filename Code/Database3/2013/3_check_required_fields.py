@@ -48,6 +48,11 @@ loc_config = config["location_fields"]
 loc_fields = loc_config["fields"]
 
 for idx, row in df.iterrows():
+    # ── Pre-existing removal from Step 0 (GPS-dropped, duplicate) ─────────────
+    if "_removal_reason" in df.columns and pd.notna(row.get("_removal_reason")):
+        removed_rows.append(idx)
+        continue
+
     missing = [f for f in loc_fields if pd.isna(row.get(f)) or str(row.get(f)).strip() == ""]
     if len(missing) == len(loc_fields):
         df.at[idx, "_removal_reason"] = loc_config["removal_reason"]
