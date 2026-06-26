@@ -64,31 +64,32 @@ OUT_PATH = os.path.join(OUT_DIR, "db_ALL_COMBINED_FINAL.xlsx")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Final column order for AllDBCombined sheet
+# Final column order for AllDBCombined sheet (BASE names — no DB-suffix yet)
+# Suffixes are computed dynamically after concatenation based on which DBs
+# actually populate each column.
 # ══════════════════════════════════════════════════════════════════════════════
 
 FINAL_COLS = [
-    # Identifiers
+    # Identifiers (added by this script — always populated everywhere)
     "unique_id", "database", "db_id", "Year",
     # Core shared fields
-    "Date", "StartTime", "EndTime (DB4)",
+    "Date", "StartTime", "EndTime",
     "Location", "Latitude", "Longitude", "GroupNumber",
     "Species", "TotalObserved", "TotalBanded",
-    "Observer", "ObserverEmail (DB3)",
+    "Observer", "ObserverEmail",
     # Band/flag info
-    "FlagCode",
-    "FlagColor (DB3)", "BandCombo (DB3)",
-    "FlagID (DB4)", "UpperLeft (DB4)", "LowerLeft (DB4)",
-    "UpperRight (DB4)", "LowerRight (DB4)",
-    # Situational (DB-specific)
-    "HabitatType (DB2)", "Tide (DB2)",
-    "Foraging (DB2)", "Roosting (DB2)",
-    "FlockActivity (DB4)",
-    "WeatherCondition (DB3)",
+    "FlagCode", "FlagColor", "BandCombo",
+    "FlagID", "UpperLeft", "LowerLeft", "UpperRight", "LowerRight",
+    # Situational
+    "HabitatType", "Tide", "Foraging", "Roosting",
+    "FlockActivity", "WeatherCondition",
     # Comments + source
     "PrimaryComments", "SecondaryComments",
     "source_database", "source_file", "source_sheet",
 ]
+
+# Identifier columns are added by this script and should never get a DB suffix
+NEVER_SUFFIX = {"unique_id", "database", "db_id", "Year"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -120,6 +121,36 @@ def _normalize_species(value, dbnum: int, warnings: list) -> str:
     # Anything else is a warning
     warnings.append(f"DB{dbnum}: non-PIPL species value {value!r} encountered")
     return s.upper()
+
+
+def compute_dynamic_suffixes(df_combined: pd.DataFrame) -> dict:
+    """
+    For each base column, find which DBs (1/2/3/4) populate it with at least
+    one non-null value, then build the new column name:
+        - If all 4 DBs contribute → keep the base name as-is
+        - If a subset contributes → append " (DBx, DBy)"
+        - NEVER_SUFFIX columns always keep the base name
+    Returns {old_name → new_name} mapping.
+    """
+    rename_map = {}
+    for col in df_combined.columns:
+        if col in NEVER_SUFFIX:
+            rename_map[col] = col
+            continue
+        contribs = []
+        for db_num in (1, 2, 3, 4):
+            sub = df_combined[df_combined["database"] == db_num]
+            if len(sub) and sub[col].notna().any():
+                contribs.append(db_num)
+        if not contribs:
+            # No DB populates it — leave as-is (shouldn't happen for our schema)
+            rename_map[col] = col
+        elif len(contribs) == 4:
+            rename_map[col] = col   # everyone contributes → no suffix
+        else:
+            suffix = ", ".join(f"DB{n}" for n in contribs)
+            rename_map[col] = f"{col} ({suffix})"
+    return rename_map
 
 
 def harmonize_db1(df: pd.DataFrame, warnings: list) -> pd.DataFrame:
@@ -168,10 +199,10 @@ def harmonize_db2(df: pd.DataFrame, warnings: list) -> pd.DataFrame:
         row["TotalObserved"]       = r.get("TotalObserved")
         row["TotalBanded"]         = r.get("TotalBanded")
         row["Observer"]            = r.get("Observer")
-        row["HabitatType (DB2)"]   = r.get("HabitatType")
-        row["Tide (DB2)"]          = r.get("Tide")
-        row["Foraging (DB2)"]      = r.get("Foraging")
-        row["Roosting (DB2)"]      = r.get("Roosting")
+        row["HabitatType"]   = r.get("HabitatType")
+        row["Tide"]          = r.get("Tide")
+        row["Foraging"]      = r.get("Foraging")
+        row["Roosting"]      = r.get("Roosting")
         row["PrimaryComments"]     = r.get("Notes")
         row["source_database"]     = r.get("source_database")
         row["source_file"]         = r.get("source_file")
@@ -200,11 +231,11 @@ def harmonize_db3(df: pd.DataFrame, warnings: list) -> pd.DataFrame:
         # TotalBanded: 1 if BandCombo non-null (this row is a banded bird); else 0
         row["TotalBanded"]               = 1 if pd.notna(r.get("BandCombo")) else 0
         row["Observer"]                  = r.get("Observer")
-        row["ObserverEmail (DB3)"]       = r.get("ObserverEmail")
+        row["ObserverEmail"]       = r.get("ObserverEmail")
         row["FlagCode"]                  = r.get("FlagCode")
-        row["FlagColor (DB3)"]           = r.get("FlagColor")
-        row["BandCombo (DB3)"]           = r.get("BandCombo")
-        row["WeatherCondition (DB3)"]    = r.get("WeatherCondition")
+        row["FlagColor"]           = r.get("FlagColor")
+        row["BandCombo"]           = r.get("BandCombo")
+        row["WeatherCondition"]    = r.get("WeatherCondition")
         row["PrimaryComments"]           = r.get("Comments")
         row["source_database"]           = r.get("source_database")
         row["source_file"]               = r.get("source_file")
@@ -223,7 +254,7 @@ def harmonize_db4(df: pd.DataFrame, warnings: list) -> pd.DataFrame:
         row["Date"]                  = r.get("ResightDate")
         row["Year"]                  = _safe_year_from_date(r.get("ResightDate"))
         row["StartTime"]             = r.get("StartTime")
-        row["EndTime (DB4)"]         = r.get("EndTime")
+        row["EndTime"]         = r.get("EndTime")
         row["Location"]              = r.get("LocationName")
         row["Latitude"]              = r.get("Latitude")
         row["Longitude"]             = r.get("Longitude")
@@ -239,12 +270,12 @@ def harmonize_db4(df: pd.DataFrame, warnings: list) -> pd.DataFrame:
         last  = str(r.get("ObserverLast") or "").strip()
         row["Observer"] = (f"{first} {last}".strip()) or pd.NA
         row["FlagCode"]              = r.get("FlagCode")
-        row["FlagID (DB4)"]          = r.get("FlagID")
-        row["UpperLeft (DB4)"]       = r.get("UpperLeft")
-        row["LowerLeft (DB4)"]       = r.get("LowerLeft")
-        row["UpperRight (DB4)"]      = r.get("UpperRight")
-        row["LowerRight (DB4)"]      = r.get("LowerRight")
-        row["FlockActivity (DB4)"]   = r.get("FlockActivityID")
+        row["FlagID"]          = r.get("FlagID")
+        row["UpperLeft"]       = r.get("UpperLeft")
+        row["LowerLeft"]       = r.get("LowerLeft")
+        row["UpperRight"]      = r.get("UpperRight")
+        row["LowerRight"]      = r.get("LowerRight")
+        row["FlockActivity"]   = r.get("FlockActivityID")
         row["PrimaryComments"]       = r.get("MasterComments")
         row["SecondaryComments"]     = r.get("ResightingComments")
         row["source_database"]       = r.get("source_database")
@@ -290,7 +321,19 @@ def main():
     combined["unique_id"] = range(1, len(combined) + 1)
     combined = combined[FINAL_COLS]   # enforce column order
 
+    # Capture stats BEFORE rename so we can still reference base column names
+    total_pipl   = combined["TotalObserved"].fillna(0).astype(float).sum()
+    total_banded = combined["TotalBanded"].fillna(0).astype(float).sum()
+
+    # ── Apply dynamic DB-suffix to column names ───────────────────────────────
+    rename_map = compute_dynamic_suffixes(combined)
+    combined = combined.rename(columns=rename_map)
+    suffixed_cols = [v for k, v in rename_map.items() if v != k]
     print(f"\n  AllDBCombined: {len(combined)} rows × {len(combined.columns)} cols")
+    if suffixed_cols:
+        print(f"  Columns tagged with contributing DBs:")
+        for new_name in suffixed_cols:
+            print(f"    • {new_name}")
 
     # ── Write workbook ────────────────────────────────────────────────────────
     with pd.ExcelWriter(OUT_PATH, engine="openpyxl") as writer:
@@ -327,8 +370,6 @@ def main():
     for n in (1, 2, 3, 4):
         print(f"    DB{n}           : {len(raw_dfs[n])} rows × {len(raw_dfs[n].columns)} cols (untouched)")
 
-    total_pipl = combined["TotalObserved"].fillna(0).astype(float).sum()
-    total_banded = combined["TotalBanded"].fillna(0).astype(float).sum()
     print(f"\n  Total PIPL observed (sum TotalObserved): {int(total_pipl):,}")
     print(f"  Total banded count (sum TotalBanded):    {int(total_banded):,}")
 
