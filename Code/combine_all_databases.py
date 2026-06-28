@@ -321,6 +321,11 @@ def main():
     combined["unique_id"] = range(1, len(combined) + 1)
     combined = combined[FINAL_COLS]   # enforce column order
 
+    # Strip time component from Date column — biologists want date-only display.
+    # pd.to_datetime → .dt.normalize keeps it datetime-typed but zeros the time;
+    # then we set an Excel cell format below so it renders as YYYY-MM-DD.
+    combined["Date"] = pd.to_datetime(combined["Date"], errors="coerce").dt.normalize()
+
     # Capture stats BEFORE rename so we can still reference base column names
     total_pipl   = combined["TotalObserved"].fillna(0).astype(float).sum()
     total_banded = combined["TotalBanded"].fillna(0).astype(float).sum()
@@ -357,6 +362,16 @@ def main():
                 cell.font      = header_font
                 cell.fill      = fill
                 cell.alignment = Alignment(horizontal="center")
+
+            # Apply date-only format to the Date column on AllDBCombined only.
+            # The per-DB sheets stay untouched per user request.
+            if sheet_name == "AllDBCombined":
+                for col_cells in ws.iter_cols(min_row=1, max_row=1):
+                    if col_cells[0].value == "Date":
+                        letter = get_column_letter(col_cells[0].column)
+                        for cell in ws[letter][1:]:
+                            cell.number_format = "YYYY-MM-DD"
+
             for col in ws.columns:
                 max_len = max((len(str(c.value)) if c.value is not None else 0) for c in col)
                 ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
